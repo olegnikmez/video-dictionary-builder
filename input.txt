@@ -1,0 +1,3 @@
+[Das ist gut.] ; [Это хорошо.]
+[Mach du mir bitte einen Tee.] ; [А ты сделай мне чай.]
+[In zwei Tassen.] ; [В двух чашках.]
