@@ -1,4 +1,3 @@
-# .gitignore
 build_tmp/
 __pycache__/
 *.mp4
@@ -7,3 +6,10 @@ __pycache__/
 *.png
 *.jpg
 settings.json
+
+# Игнорировать все текстовые файлы (чтобы рабочие словари не попадали в репозиторий)
+*.txt
+
+# Исключения: эти файлы Git обязан отслеживать
+!requirements.txt
+!input.txt
