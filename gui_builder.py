@@ -3,6 +3,7 @@ import subprocess
 import re
 import shutil
 import json
+import time
 from pathlib import Path
 from dataclasses import dataclass
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -42,6 +43,14 @@ class BuilderThread(QThread):
             
             video_segments = []
             for phrase in phrases:
+                expected_segment = self.work_dir / f"{phrase.base_name}_segment.mp4"
+                
+                # Умный кэш: пропускаем уже готовые видео-сегменты
+                if expected_segment.exists() and expected_segment.stat().st_size > 0:
+                    self.log_signal.emit(f"[{phrase.base_name}] Найден готовый сегмент, пропускаем рендер...")
+                    video_segments.append(expected_segment)
+                    continue
+
                 self.log_signal.emit(f"[{phrase.base_name}] Синтез аудио...")
                 ru_audio, de_audio = self._generate_audio(phrase)
                 
@@ -81,19 +90,24 @@ class BuilderThread(QThread):
         ru_rate = self._format_rate(self.config['ru']['speed'])
         de_rate = self._format_rate(self.config['de']['speed'])
         
-        subprocess.run(["edge-tts", 
-                        "--voice", self.config['ru']['voice'], 
-                        f"--rate={ru_rate}",
-                        "--text", phrase.ru_text, 
-                        "--write-media", str(ru_path)], 
-                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                       
-        subprocess.run(["edge-tts", 
-                        "--voice", self.config['de']['voice'], 
-                        f"--rate={de_rate}",
-                        "--text", phrase.de_text, 
-                        "--write-media", str(de_path)], 
-                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Локальная функция для выполнения TTS с механизмом Retry
+        def run_tts(voice, rate, text, output_path):
+            cmd = ["edge-tts", "--voice", voice, f"--rate={rate}", "--text", text, "--write-media", str(output_path)]
+            max_retries = 3
+            
+            for attempt in range(max_retries):
+                try:
+                    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return # Успешный выход из цикла
+                except subprocess.CalledProcessError:
+                    if attempt < max_retries - 1:
+                        time.sleep(3) # Пауза 3 секунды перед новой попыткой (обход Rate Limit)
+                    else:
+                        raise RuntimeError(f"Сетевая ошибка сервера Microsoft TTS после {max_retries} попыток.")
+
+        run_tts(self.config['ru']['voice'], ru_rate, phrase.ru_text, ru_path)
+        run_tts(self.config['de']['voice'], de_rate, phrase.de_text, de_path)
+        
         return ru_path, de_path
 
     def _wrap_text_spaced(self, text: str, font: ImageFont.FreeTypeFont, max_width: int, spacing: int) -> list[str]:
